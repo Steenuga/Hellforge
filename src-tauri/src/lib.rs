@@ -26,8 +26,22 @@ fn database(app:&tauri::AppHandle)->Result<Connection,String>{
  let dir=data_path(app)?;
  let conn=Connection::open(dir.join("hellforge.sqlite3")).map_err(|e|e.to_string())?;
  conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e|e.to_string())?;
- conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS library_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS play_history (id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, seconds INTEGER NOT NULL, exit_code INTEGER); CREATE INDEX IF NOT EXISTS idx_play_history_profile ON play_history(profile_id); CREATE TABLE IF NOT EXISTS completed_profiles (profile_id TEXT PRIMARY KEY, completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);").map_err(|e|e.to_string())?;
+ conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS library_snapshot (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS play_history (id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, seconds INTEGER NOT NULL, exit_code INTEGER); CREATE INDEX IF NOT EXISTS idx_play_history_profile ON play_history(profile_id); CREATE TABLE IF NOT EXISTS completed_profiles (profile_id TEXT PRIMARY KEY, completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS mod_library_settings (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL);").map_err(|e|e.to_string())?;
  Ok(conn)
+}
+#[tauri::command]
+fn get_mod_library_settings(app:tauri::AppHandle)->Result<Option<String>,String>{
+ let conn=database(&app)?;
+ conn.query_row("SELECT payload FROM mod_library_settings WHERE id=1",[],|r|r.get(0)).optional().map_err(|e|e.to_string())
+}
+#[tauri::command]
+fn save_mod_library_settings(app:tauri::AppHandle,payload:String)->Result<(),String>{
+ if payload.len()>2_000_000{return Err("Mod settings too large".into())}
+ let value:serde_json::Value=serde_json::from_str(&payload).map_err(|e|e.to_string())?;
+ if !value.is_object(){return Err("Invalid mod settings".into())}
+ let conn=database(&app)?;
+ conn.execute("INSERT INTO mod_library_settings(id,payload) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",[payload]).map_err(|e|e.to_string())?;
+ Ok(())
 }
 fn load(app: &tauri::AppHandle) -> Result<Library,String> {
  let conn=database(app)?;
@@ -203,6 +217,22 @@ fn import_mod(app:tauri::AppHandle,path:String,kind:Option<String>)->Result<Libr
  save(&app,&l)?;Ok(l)
 }
 #[tauri::command]
+fn import_profile_mod(app:tauri::AppHandle,path:String,profile_id:String)->Result<Library,String>{
+ let source=PathBuf::from(&path);
+ if !source.is_file() || !source.extension().is_some_and(|e|["wad","pk3","pk7","zip"].iter().any(|x|e.eq_ignore_ascii_case(x))){return Err("Supported formats: WAD, PK3, PK7, ZIP".into())}
+ if profile_id.trim().is_empty(){return Err("Invalid profile ID".into())}
+ let id=file_id(&source)?;
+ let mut lib=load(&app)?;
+ // Content hashes are library IDs. Never silently turn an existing global mod into a private mod.
+ if lib.mods.iter().any(|m|m.id==id){return Err("This file is already imported. Add it from the library instead.".into())}
+ // Use a stable, filesystem-safe folder name, independent of user-supplied profile IDs.
+ let profile_folder=hex::encode(Sha256::digest(profile_id.as_bytes()));
+ let stored=managed_copy(&app,&source,&format!("profile-mods/{profile_folder}"),&id)?;
+ lib.mods.push(ModFile{id,name:source.file_name().unwrap_or_default().to_string_lossy().into_owned(),path:stored});
+ save(&app,&lib)?;
+ Ok(lib)
+}
+#[tauri::command]
 fn rename_library_item(app:tauri::AppHandle,kind:String,id:String,name:String)->Result<Library,String>{
  let clean=name.trim();
  if clean.is_empty() || clean.chars().count()>120 || clean.chars().any(|c|c.is_control()) {return Err("Invalid display name (1–120 characters)".into())}
@@ -216,7 +246,7 @@ fn rename_library_item(app:tauri::AppHandle,kind:String,id:String,name:String)->
 }
 #[tauri::command]
 fn reveal_library_folder(app:tauri::AppHandle,kind:String)->Result<(),String>{
- let folder=match kind.as_str(){"game"=>"games","mod"=>"mods","map"=>"maps","cover"=>"covers",_=>return Err("Unknown library folder".into())};
+ let folder=match kind.as_str(){"game"=>"games","mod"=>"mods","map"=>"maps","cover"=>"covers","profile_mod"=>"profile-mods",_=>return Err("Unknown library folder".into())};
  let path=data_path(&app)?.join(folder);
  fs::create_dir_all(&path).map_err(|e|e.to_string())?;
  #[cfg(target_os="windows")]
@@ -238,9 +268,13 @@ fn delete_library_item(app:tauri::AppHandle,kind:String,id:String)->Result<Libra
  }.ok_or("Item not found")?;
  // Never delete arbitrary external paths: only files within our managed category.
  let category=match kind.as_str(){"game"=>"games","mod"=>"mods",_=>"maps"};
- let managed=data_path(&app)?.join(category).canonicalize().map_err(|e|e.to_string())?;
+ let base=data_path(&app)?;
+ let managed=base.join(category).canonicalize().ok();
+ let private_managed=base.join("profile-mods").canonicalize().ok();
  let actual=PathBuf::from(&file).canonicalize().map_err(|e|e.to_string())?;
- if !actual.starts_with(&managed){return Err("File is outside managed library".into())}
+ let allowed=managed.as_ref().is_some_and(|dir|actual.starts_with(dir)) ||
+  (kind=="mod" && private_managed.as_ref().is_some_and(|dir|actual.starts_with(dir)));
+ if !allowed{return Err("File is outside managed library".into())}
  if kind=="game" && lib.profiles.iter().any(|p|p.game_id==id){return Err("Remove profiles using this game first".into())}
  if kind=="game"{lib.games.retain(|x|x.id!=id)}
  else if kind=="mod"{lib.mods.retain(|x|x.id!=id);for p in &mut lib.profiles{p.mod_ids.retain(|x|x!=&id)}}
@@ -592,4 +626,4 @@ async fn generate_obsidian_map(app:tauri::AppHandle,exe_path:String,name:String,
   imported
  }).await.map_err(|e|e.to_string())?
 }
-pub fn run(){tauri::Builder::default().plugin(tauri_plugin_dialog::init()).invoke_handler(tauri::generate_handler![rename_library_item,reveal_library_folder,generate_obsidian_map,get_achievement_stats,set_profile_completed,get_library,backup_library,restore_library,get_play_history,inspect_wad,export_profile,import_profile_bundle,import_game,save_steamgrid_key,fetch_profile_cover,refresh_steamgrid_covers,refresh_game_covers,save_game_cover,register_engine,unregister_engine,import_mod,delete_library_item,save_cover,read_cover,save_profile,delete_profile,launch_profile,list_engines,install_engine]).run(tauri::generate_context!()).expect("Hellforge failed");}
+pub fn run(){tauri::Builder::default().plugin(tauri_plugin_dialog::init()).invoke_handler(tauri::generate_handler![import_profile_mod,get_mod_library_settings,save_mod_library_settings,rename_library_item,reveal_library_folder,generate_obsidian_map,get_achievement_stats,set_profile_completed,get_library,backup_library,restore_library,get_play_history,inspect_wad,export_profile,import_profile_bundle,import_game,save_steamgrid_key,fetch_profile_cover,refresh_steamgrid_covers,refresh_game_covers,save_game_cover,register_engine,unregister_engine,import_mod,delete_library_item,save_cover,read_cover,save_profile,delete_profile,launch_profile,list_engines,install_engine]).run(tauri::generate_context!()).expect("Hellforge failed");}
