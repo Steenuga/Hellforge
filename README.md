@@ -27,7 +27,14 @@
 
 ## Getting started
 
-> **Windows release:** the downloadable installer will be linked here after the release build has been compiled and tested.
+
+> **Windows Release - Hellforge v1.1.3**
+>
+> Download the latest version of Hellforge for Windows:
+>
+> **[Download Hellforge for Windows](https://github.com/Steenuga/Hellforge/releases/latest)**
+>
+> Download the `.exe` installer from the release assets and run it to install Hellforge.
 
 1. Install a supported DOOM source port, such as [GZDoom](https://zdoom.org/downloads).
 2. Prepare your own legally obtained game IWAD (for example, `DOOM2.WAD`).
