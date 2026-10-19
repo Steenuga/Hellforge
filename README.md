@@ -25,6 +25,39 @@
 - **Personalization:** seven interface themes, profile groups, and a multilingual interface with 23 language options.
 - **Local library:** SQLite storage, with metadata/settings backup and restore tools.
 
+
+## Screenshots
+
+Explore Hellforge's interface, customizable themes, and multilingual support.
+
+### Game Library
+Manage your classic DOOM games and IWAD files with automatic cover artwork.
+
+![Hellforge Game Library](screenshots/games.png)
+
+### Profiles
+Create and organize custom DOOM setups with mods, maps, and source ports.
+
+![Hellforge Profiles](screenshots/profiles.png)
+
+### Mod Library
+Organize your mods into categories and manage your collection.
+
+![Hellforge Mod Library](screenshots/mods.png)
+
+### Map Generator
+Generate custom DOOM levels with OBSIDIAN integration.
+
+![Hellforge Map Generator](screenshots/map-generator.png)
+
+### Achievements
+Track your playtime, progress, and achievements.
+
+![Hellforge Achievements](screenshots/achievements.png)
+
+*Hellforge supports 23 interface languages and multiple customizable themes.*
+
+
 ## Getting started
 
 
