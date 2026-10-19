@@ -1,0 +1,15 @@
+HELLFORGE 1.0.0 — CLEAN GITHUB SOURCE
+
+Цей архів призначений для завантаження вихідного коду у GitHub.
+Розпакуй архів і завантаж вміст у корінь репозиторію, зберігаючи структуру папок.
+README.md, README.uk.md, assets/ та LICENSE з твого GitHub не замінюються цим архівом.
+Не завантажуй сам ZIP як єдиний файл у репозиторій.
+
+Папки:
+.github/workflows/ — GitHub Actions
+src/ — React UI, локалізації, логотипи
+src-tauri/ — Rust, налаштування та іконки Windows
+scripts/ — допоміжні скрипти
+docs/ — актуальні інструкції
+
+УВАГА: Windows build не перевірений. Запусти GitHub Actions і перевір результати перед публікацією Release.

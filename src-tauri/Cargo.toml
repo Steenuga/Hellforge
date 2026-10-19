@@ -1,0 +1,27 @@
+[package]
+name = "hellforge"
+version = "1.0.0"
+description = "Classic FPS launcher"
+authors = ["Hellforge"]
+edition = "2021"
+
+[lib]
+name = "hellforge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+reqwest = { version = "0.12", features = ["blocking", "json", "rustls-tls"], default-features = false }
+zip = "2.2"
+
+base64 = "0.22"
